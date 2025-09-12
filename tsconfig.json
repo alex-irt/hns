@@ -1,0 +1,6 @@
+{
+  "extends": "@tsconfig/recommended",
+  "compilerOptions": {
+    "types": ["@webgpu/types"]
+  }
+}

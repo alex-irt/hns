@@ -1,14 +1,16 @@
+import { Multiplayer } from './multiplayer';
 import { CanvasShader } from './voxel/CanvasShader';
 import { ShaderCharacter } from './voxel/ShaderCharacter';
 
-export async function mount() {
+async function mount() {
+
     const canvas = document.querySelector('canvas');
     if (!canvas) {
         throw new Error("Canvas element not found");
     }
 
-    canvas.width = 800;
-    canvas.height = 600;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
     // new Engine(canvas);
 
@@ -20,6 +22,9 @@ export async function mount() {
 
     const blocks = await shader.init();
     const character = new ShaderCharacter(blocks);
+    const multiplayer = new Multiplayer();
+
+    document.querySelector('#loading')?.remove();
 
     // trap cursor
     canvas.addEventListener('click', () => {
@@ -32,14 +37,17 @@ export async function mount() {
         lastFrameTime = performance.now();
         const timeSinceStart = (performance.now() - startTime) / 1000;
 
-        if (timeSinceStart > 1) {
-            character.update(deltaTime);
-        }
+        character.update(deltaTime);
 
-        shader.render(character);
+        shader.render(character, Object.values(multiplayer.players));
+        multiplayer.update(character);
         requestAnimationFrame(animate);
 
         framesPerSecond = 1000 / deltaTime;
     }
     animate();
 }
+    setTimeout(() => {
+
+mount();
+    }, 100);

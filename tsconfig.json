@@ -1,6 +1,7 @@
 {
   "extends": "@tsconfig/recommended",
   "compilerOptions": {
-    "types": ["@webgpu/types"]
+    "types": ["@webgpu/types"],
+    "lib": ["DOM", "ESNext"],
   }
 }

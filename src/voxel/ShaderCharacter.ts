@@ -7,10 +7,12 @@ type HitInfo = {
     pos: Vec3,
     block: number[]
 };
+
+
 export class ShaderCharacter {
     cameraOffset: Vec3 = new Vec3(0, 1.25, 0);
 
-    jumpStrength: number = 15;
+    jumpStrength: number = 20;
     jumpStrengthKickstart: number = 25;
 
     jumping: boolean = false;
@@ -22,6 +24,7 @@ export class ShaderCharacter {
 
     position: Vec3 = new Vec3(0, 0, 0);
     rotation: Quaternion = new Quaternion();
+    color: number[] = [.1, .1, .1, 1]; // RGBA
 
     velocity: Vec3 = new Vec3(0, 0, 0);
 
@@ -30,10 +33,19 @@ export class ShaderCharacter {
     blocks: [number, number, number, number][];
     blockChanges: { position: Vec3, block: [number, number, number, number], oldBlock: [number, number, number, number] }[] = [];
 
+    collectedLights: string[] = [];
+
     constructor(blocks: [number, number, number, number][], position: Vec3 = new Vec3(4.0, 10.0, 4.0)) {
         this.input = new Input();
         this.position = position;
         this.blocks = blocks;
+
+        this.color = [
+            .5,
+            .5,
+            .5,
+            .25
+        ];
     }
 
     RayCast(origin: Vec3, dir: Vec3): HitInfo {
@@ -246,9 +258,9 @@ export class ShaderCharacter {
                     const pos = hit.pos.sub(hit.normal.clone().multiplyScalar(-.15)); // Adjust position to avoid placing on top
                     // of the block
 
-                    this.setBlock(pos.clone().floor(), [2, 60, 10, 20]); // Place a block of type 1 (e.g., BlockGrass)
+                    // this.setBlock(pos.clone().floor(), [2, 60, 10, 20]); // Place a block of type 1 (e.g., BlockGrass)
                 } else if (this.input.buttonsPressed['mouse3']) {
-                    this.setBlock(hit.pos.clone().floor(), [0, 0, 0, 0]); // Remove the block
+                    // this.setBlock(hit.pos.clone().floor(), [0, 0, 0, 0]); // Remove the block
                 }
             }
         }
@@ -292,11 +304,13 @@ export class ShaderCharacter {
                         const currentVelocity = new Vec3(this.velocity.x, 0, this.velocity.z);
                         const velocityInDirectionAmount = currentVelocity.dot(direction);
                         const collDirCurrentVelocity = velocityInDirectionAmount * currentVelocity.length();
+                        const initialYVelocity = this.velocity.y;
 
                         this.velocity.sub(direction.clone().multiplyScalar(collDirCurrentVelocity));
-
+                        
                         // reduce overall velocity based on velocityInDirectionAmount
                         this.velocity.multiplyScalar((1 - Math.abs(velocityInDirectionAmount) / maxMoveSpeed));
+                        this.velocity.y = initialYVelocity;
                     }
                 }
             });
@@ -324,9 +338,15 @@ export class ShaderCharacter {
             }
         }
 
+        
         // Update character position
         this.position.x += this.velocity.x * deltaTime * 0.01; // Adjust speed factor as needed
         this.position.y += this.velocity.y * deltaTime * 0.01; // Adjust speed factor as needed
         this.position.z += this.velocity.z * deltaTime * 0.01; // Adjust speed factor as needed
+
+        if (this.position.y < -10) {
+            this.position = new Vec3(4.0, 10.0, 4.0);
+            this.velocity = new Vec3(0, 0, 0);
+        }
     }
 }

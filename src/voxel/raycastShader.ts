@@ -12,9 +12,22 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
 
     @group(0) @binding(5)
     var<uniform> lightData : LightData;
-
+    
     @group(0) @binding(6)
     var<uniform> inputData : InputData;
+   
+    @group(0) @binding(7)
+    var<uniform> playerData : PlayerData;
+
+    struct PlayerData {
+        playerCount : i32,                   // 4 bytes
+        players : array<Player, 64>         // 64 * 48 bytes = 3072 bytes
+    }
+    struct Player {
+        position : vec3<f32>,  // 12 bytes
+        rotation : vec4<f32>,  // 16 bytes
+        color : vec4<f32>      // 16 bytes
+    }
 
     struct Settings {
         worldSizeX : u32,
@@ -52,9 +65,7 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
     struct Shape {
         position : vec3 < f32>,
         color : vec4 < f32>,
-        width : f32,
-        height : f32,
-        depth : f32
+        size : vec3 < f32>,
     }
 
     struct ChangedBlock {
@@ -154,34 +165,46 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
         return vec2(tmin, tmax);
     }
 
-    fn intersectAABBCatShapes(origin: vec3<f32>, dir: vec3<f32>, offset: vec3<f32>) -> HitInfo {
+    fn intersectAABBCatShapes(origin: vec3<f32>, dir: vec3<f32>) -> HitInfo {
         let catShapes = array<Shape, 9>(
             // Body
-            Shape(vec3<f32>(-.25,.25,-.5), vec4<f32>(.1, .1, .1, 1), .5, .5, 1.0),
+            Shape(vec3<f32>(-.25,.25,-.5), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.5, .5, 1.5)),
             // Head
-            Shape(vec3<f32>(-.3,.35,-.35), vec4<f32>(.1, .1, .1, 1), .6, .6, .6),
+            Shape(vec3<f32>(-.3,.35,-.55), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.6, .6, .6)),
             // feet
-            Shape(vec3<f32>(-.2,0.0,-.2), vec4<f32>(.1, .1, .1, 1), .2, .4, .2),
-            Shape(vec3<f32>(.0,0.0,-.2), vec4<f32>(.1, .1, .1, 1), .2, .4, .2),
-            Shape(vec3<f32>(-.2,0.0,.2), vec4<f32>(.1, .1, .1, 1), .2, .4, .2),
-            Shape(vec3<f32>(.0,0.0,.2), vec4<f32>(.1, .1, .1, 1), .2, .4, .2),
+            Shape(vec3<f32>(-.2,0.0,-.4), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .4, .1)),
+            Shape(vec3<f32>(.0,0.0,-.4), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .4, .1)),
+            Shape(vec3<f32>(-.2,0.0,.4), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .4, .1)),
+            Shape(vec3<f32>(.0,0.0,.4), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .4, .1)),
             // tail
-            Shape(vec3<f32>(.25,.25,.5), vec4<f32>(.1, .1, .1, 1), .1, .1, .5),
+            Shape(vec3<f32>(0.0,.5,1.0), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .7, .1)),
             // ears
-            Shape(vec3<f32>(-.25,.75,-.1), vec4<f32>(.1, .1, .1, 1), .2, .2, .2),
-            Shape(vec3<f32>(.05,.75,-.1), vec4<f32>(.1, .1, .1, 1), .2, .2, .2)
+            Shape(vec3<f32>(-.25,.95,-.5), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .1, .1)),
+            Shape(vec3<f32>(.15,.95,-.5), vec4<f32>(.2, .2, .2, 1), vec3<f32>(.1, .1, .1)),
         );
 
         var hitInfo = HitInfo(vec3<f32>(0.0), 0.0, vec3<f32>(0.0), VoxelData(0, vec4(0.0)));
         let invDir = 1.0 / dir;
-        
-        for (var i = 0; i < arrayLength(&catShapes); i++) {
-            var shape = catShapes[i];
-            shape.position += offset;
 
-            hitInfo = intersectWithShape(origin, invDir, shape);
-            if (hitInfo.block.block != 0) {
-                break;
+        var bestDist = 10000.0;
+        
+        for (var i = 0; i < playerData.playerCount; i++) {
+            let player = playerData.players[i];
+            let offset = player.position + vec3<f32>(0.0, -1.0, 0.0);
+
+            for (var i = 0; i < 9; i++) {
+                var shape = catShapes[i];
+
+                var newHitInfo = intersectWithShape(origin - offset, dir, shape);
+                if (newHitInfo.block.block != 0) {
+                    // convert hit position back into world-space by adding the offset
+                    newHitInfo.pos = newHitInfo.pos + offset;
+                    
+                    if (newHitInfo.dist < bestDist) {
+                        bestDist = newHitInfo.dist;
+                        hitInfo = newHitInfo;
+                    }
+                }
             }
         }
 
@@ -189,19 +212,35 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
     }
 
     fn intersectWithShape(rayOrigin: vec3<f32>, rayDirection: vec3<f32>, shape: Shape) -> HitInfo {
-        let size = vec3<f32>(shape.width, shape.height, shape.depth);
         let boxMin = shape.position;
-        let boxMax = shape.position + size;
+        let boxMax = shape.position + shape.size;
 
         var hitInfo = HitInfo(vec3<f32>(0.0), 0.0, vec3<f32>(0.0), VoxelData(0, vec4(0.0)));
 
         let invDir = 1.0 / rayDirection; // pre-compute to avoid slow divisions
         let time = IntersectAABB(rayOrigin, invDir, boxMin, boxMax);
 
+        // time.x = tmin, time.y = tmax
         if (time.x < time.y && time.y > 0.0) {
             hitInfo.dist = time.x;
+            // compute world hit position (in rayOrigin space)
             hitInfo.pos = rayOrigin + rayDirection * hitInfo.dist;
-            hitInfo.normal = vec3<f32>(0.0);
+
+            // determine which axis produced tmin to approximate normal
+            let t0 = (boxMin - rayOrigin) * invDir;
+            let t1 = (boxMax - rayOrigin) * invDir;
+            var tminVec = min(t0, t1);
+            var tmaxVec = max(t0, t1);
+
+            // find largest component of tminVec -> the axis of entry
+            if (tminVec.x >= tminVec.y && tminVec.x >= tminVec.z) {
+                hitInfo.normal = vec3<f32>(sign(-rayDirection.x), 0.0, 0.0);
+            } else if (tminVec.y >= tminVec.x && tminVec.y >= tminVec.z) {
+                hitInfo.normal = vec3<f32>(0.0, sign(-rayDirection.y), 0.0);
+            } else {
+                hitInfo.normal = vec3<f32>(0.0, 0.0, sign(-rayDirection.z));
+            }
+
             hitInfo.block = VoxelData(1, shape.color);
         }
 
@@ -252,10 +291,13 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
 
         RayPosition = vec3 < f32 > (PositionRotation.x, RayPosition.y, PositionRotation.y);
 
-        var Primary = intersectAABBCatShapes(RayPosition, RayDirection, vec3<f32>(8.0, 4.0, 8.0));
+        var Primary = intersectAABBCatShapes(RayPosition, RayDirection);
 
-        if (!Primary.block) {
-            Primary = RayCast(RayPosition, RayDirection);
+        let BlockPrimary = RayCast(RayPosition, RayDirection);
+
+        if (Primary.block.block == 0 || BlockPrimary.dist < Primary.dist) {
+            Primary = BlockPrimary;
+            // Primary.block.color = vec4(0.75, 0.75, 0.75, 1.0);
         }
 
         var color = vec4(0.0);
@@ -279,28 +321,32 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
             let bias = .001;
             var shadowRayStart = Primary.pos + Primary.normal * bias;
 
-            //var shadowRayStart = vec3(8.8, 6.0, 8.8);
+            let catHit = intersectAABBCatShapes(shadowRayStart, normalize(light.position - shadowRayStart));
+
 
             let shadowRay = RayCast(shadowRayStart, normalize(light.position - shadowRayStart));
 
-            if (shadowRay.dist > lightDist - bias)
-            {
-                //textureStore(tex, Pixel, Primary.block.color * ((1.0 - lightDist / 16.0) * shadowRay.block.color));
-                color += ((1.0 - lightDist / (light.color.a * 64.0)) * light.color);
-            } else if (shadowRay.dist > lightDist - 2) {
-                let hitBlockPos = floor(shadowRay.pos);
-                let lightBlockPos = floor(light.position);
+            if (catHit.block.block == 0 || catHit.dist > shadowRay.dist) {
 
-                if (hitBlockPos.x == lightBlockPos.x &&
-                    hitBlockPos.y == lightBlockPos.y &&
-                    hitBlockPos.z == lightBlockPos.z)
+                if (shadowRay.dist > lightDist - bias)
                 {
+                    //textureStore(tex, Pixel, Primary.block.color * ((1.0 - lightDist / 16.0) * shadowRay.block.color));
                     color += ((1.0 - lightDist / (light.color.a * 64.0)) * light.color);
+                } else if (shadowRay.dist > lightDist - 2) {
+                    let hitBlockPos = floor(shadowRay.pos);
+                    let lightBlockPos = floor(light.position);
+
+                    if (hitBlockPos.x == lightBlockPos.x &&
+                        hitBlockPos.y == lightBlockPos.y &&
+                        hitBlockPos.z == lightBlockPos.z)
+                    {
+                        color += ((1.0 - lightDist / (light.color.a * 64.0)) * light.color);
+                    }
                 }
             }
         }
 
-        textureStore(tex, Pixel, vec4(f32(Primary.block.block * 2)) * color);
+        textureStore(tex, Pixel, Primary.block.color * color);
         // textureStore(tex, Pixel, vec4(
         //     (1 - (Primary.dist / 16.0)) * Primary.block.color.r,
         //     (1 - (Primary.dist / 16.0)) * Primary.block.color.g,
@@ -356,8 +402,9 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
                 continue;
             }
 
-            textureStore(blockDataA, vec3u(blockChange.position), vec4u(blockChange.block, 0, 0, 0));
-            textureStore(tex, vec2u(blockChange.position.xy), vec4(1.0));
+            // disable editing for the game demo
+            // textureStore(blockDataA, vec3u(blockChange.position), vec4u(blockChange.block, 0, 0, 0));
+            // textureStore(tex, vec2u(blockChange.position.xy), vec4(1.0));
         }
     }
 `;

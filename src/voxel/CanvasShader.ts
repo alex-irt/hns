@@ -251,6 +251,20 @@ export class CanvasShader {
     async init() {
         const adapter = await navigator.gpu?.requestAdapter();
         if (!adapter) {
+
+            // Add a message to the user
+            // create an h1 element and add it to the page
+            const h1 = document.createElement('h1');
+            h1.innerText = `WebGPU not supported, please enable the feature flag to use WebGPU or try a different browser. For Chrome, go to chrome://flags/#enable-vulkan. For Safari Advanced > Experimental Features and enable "WebGPU". For Firefox, got to about:config and enable "dom.webgpu.enabled" and "gfx.webrender.all".`;
+            h1.style.position = 'absolute';
+            h1.style.top = '20%';
+            h1.style.left = '50%';
+            h1.style.transform = 'translate(-50%, -50%)';
+            h1.style.color = 'white';
+            h1.style.backgroundColor = 'black';
+            h1.style.padding = '20px';
+            h1.style.borderRadius = '10px';
+            document.body.appendChild(h1);
             throw new Error("Failed to get GPU adapter");
         }
 
@@ -284,7 +298,7 @@ export class CanvasShader {
 
         // deterministic PRNG (mulberry32)
         function mulberry32(a: number) {
-            return function() {
+            return function () {
                 var t = a += 0x6D2B79F5;
                 t = Math.imul(t ^ t >>> 15, t | 1);
                 t ^= t + Math.imul(t ^ t >>> 7, t | 61);
@@ -297,46 +311,46 @@ export class CanvasShader {
             memory: {} as Record<string, number>,
             // runtime RNG, seeded via seed()
             rng: mulberry32(4658) as () => number,
-            rand_vect: function(){
+            rand_vect: function () {
                 const theta = this.rng() * 2 * Math.PI;
-                return {x: Math.cos(theta), y: Math.sin(theta)};
+                return { x: Math.cos(theta), y: Math.sin(theta) };
             },
-            dot_prod_grid: function(x: number, y: number, vx: number, vy: number){
+            dot_prod_grid: function (x: number, y: number, vx: number, vy: number) {
                 const key = `${vx},${vy}`;
                 let g_vect = this.gradients[key];
-                const d_vect = {x: x - vx, y: y - vy};
-                if (!g_vect){
+                const d_vect = { x: x - vx, y: y - vy };
+                if (!g_vect) {
                     g_vect = this.rand_vect();
                     this.gradients[key] = g_vect;
                 }
                 return d_vect.x * g_vect.x + d_vect.y * g_vect.y;
             },
-            smootherstep: function(x: number){
-                return 6*x**5 - 15*x**4 + 10*x**3;
+            smootherstep: function (x: number) {
+                return 6 * x ** 5 - 15 * x ** 4 + 10 * x ** 3;
             },
-            interp: function(x: number, a: number, b: number){
-                return a + this.smootherstep(x) * (b-a);
+            interp: function (x: number, a: number, b: number) {
+                return a + this.smootherstep(x) * (b - a);
             },
-            seed: function(seed?: number){
+            seed: function (seed?: number) {
                 this.gradients = {};
                 this.memory = {};
                 const s = seed === undefined ? 4658 : (seed >>> 0);
                 this.rng = mulberry32(s);
             },
-            get: function(x: number, y: number) {
+            get: function (x: number, y: number) {
                 const key = `${x},${y}`;
                 if (Object.prototype.hasOwnProperty.call(this.memory, key))
                     return this.memory[key];
                 const xf = Math.floor(x);
                 const yf = Math.floor(y);
                 //interpolate
-                const tl = this.dot_prod_grid(x, y, xf,   yf);
-                const tr = this.dot_prod_grid(x, y, xf+1, yf);
-                const bl = this.dot_prod_grid(x, y, xf,   yf+1);
-                const br = this.dot_prod_grid(x, y, xf+1, yf+1);
-                const xt = this.interp(x-xf, tl, tr);
-                const xb = this.interp(x-xf, bl, br);
-                const v = this.interp(y-yf, xt, xb);
+                const tl = this.dot_prod_grid(x, y, xf, yf);
+                const tr = this.dot_prod_grid(x, y, xf + 1, yf);
+                const bl = this.dot_prod_grid(x, y, xf, yf + 1);
+                const br = this.dot_prod_grid(x, y, xf + 1, yf + 1);
+                const xt = this.interp(x - xf, tl, tr);
+                const xb = this.interp(x - xf, bl, br);
+                const v = this.interp(y - yf, xt, xb);
                 this.memory[key] = v;
                 return v;
             }
@@ -532,7 +546,7 @@ export class CanvasShader {
         return texture;
     }
 
-    render(character?: ShaderCharacter, players: Array<{ position: number[], rotation: number[], color: number[], lastUpdate: number }>=[]) {
+    render(character?: ShaderCharacter, players: Array<{ position: number[], rotation: number[], color: number[], lastUpdate: number }> = []) {
         let cameraData: ArrayBuffer;
 
         if (character) {
@@ -587,7 +601,7 @@ export class CanvasShader {
         if (character) {
             for (const sBlock of specialBlocks) {
                 const dist = character?.position.distanceTo(new Vec3(...sBlock.position)) || 0;
-    
+
                 if (dist < 3) {
                     console.log("Collected special block:", sBlock.id);
                     character!.color = sBlock.playerColor;
@@ -619,15 +633,15 @@ export class CanvasShader {
         }
 
         const lightStartValues: Array<{ position: number[], color: number[] }> = [];
-            lightStartValues.push(
-                { position: [8.5, 5.5, 8.5], color: [.5, .3, .4, .75] },
-                // { position: [4.5, 6.5, 2.5 + (i * 16)], color: [0, .5, 0, 1] },
-                // { position: [2.5, 14.5, 4.5 + (i * 16)], color: [0, 0, .5, 1] },
-                // { position: [14.5, 6.5, 14.5 + (i * 16)], color: [.25, 0, 0.5, 1] },
-                // { position: [6.5, 14.5, 14.5 + (i * 16)], color: [0, .5, .5, 1] },
-                { position: (character?.position.clone() || new Vec3(0, 0, 0)).add(new Vec3(0, 3, 0)).toArray(), color: character?.color || [1, 1, 1, 0] },
-                ...specialBlocks.map(b => ({ position: b.position, color: b.color }))
-            );
+        lightStartValues.push(
+            { position: [8.5, 5.5, 8.5], color: [.5, .3, .4, .75] },
+            // { position: [4.5, 6.5, 2.5 + (i * 16)], color: [0, .5, 0, 1] },
+            // { position: [2.5, 14.5, 4.5 + (i * 16)], color: [0, 0, .5, 1] },
+            // { position: [14.5, 6.5, 14.5 + (i * 16)], color: [.25, 0, 0.5, 1] },
+            // { position: [6.5, 14.5, 14.5 + (i * 16)], color: [0, .5, .5, 1] },
+            { position: (character?.position.clone() || new Vec3(0, 0, 0)).add(new Vec3(0, 3, 0)).toArray(), color: character?.color || [1, 1, 1, 0] },
+            ...specialBlocks.map(b => ({ position: b.position, color: b.color }))
+        );
 
         const animatedLights = lightStartValues.map((light: any, i: number) => {
             // disabled

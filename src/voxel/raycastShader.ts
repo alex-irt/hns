@@ -79,6 +79,23 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
         return vec2 < f32 > (v.x * CosA - v.y * SinA, v.y * CosA + v.x * SinA);
     }
 
+    // rotate vector v by quaternion q (q = vec4(x,y,z,w))
+    fn quatRotate(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
+        let u = vec3<f32>(q.x, q.y, q.z);
+        let s = q.w;
+        return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
+    }
+
+    // multiply two quaternions q1 * q2
+    fn quatMul(a: vec4<f32>, b: vec4<f32>) -> vec4<f32> {
+        return vec4<f32>(
+            a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+        );
+    }
+
     fn GetVoxel(c : vec3 < f32>) -> VoxelData {
         if (c.x < 0.0 || c.x >= f32(settings.worldSizeX) || c.y < 0.0 || c.y >= f32(settings.worldSizeY) || c.z < 0.0 || c.z >= f32(settings.worldSizeZ))
         {
@@ -190,16 +207,44 @@ var tex : texture_storage_2d<\${presentationFormat}, write>;
         
         for (var i = 0; i < playerData.playerCount; i++) {
             let player = playerData.players[i];
-            let offset = player.position + vec3<f32>(0.0, -1.0, 0.0);
+            let offset = player.position + vec3<f32>(0.0, -1.5, 0.0);
 
-            for (var i = 0; i < 9; i++) {
-                var shape = catShapes[i];
+            // extract yaw-only rotation from player's quaternion (ignore pitch and roll)
+            // quaternion -> yaw (around Y) extraction
+            // yaw = atan2(2*(w*y + z*x), 1 - 2*(y*y + x*x)) but we build a yaw-only quaternion below
+            let px = player.rotation.x;
+            let py = player.rotation.y;
+            let pz = player.rotation.z;
+            let pw = player.rotation.w;
 
-                var newHitInfo = intersectWithShape(origin - offset, dir, shape);
+            // compute yaw angle from quaternion
+            let siny_cosp = 2.0 * (pw * py + pz * px);
+            let cosy_cosp = 1.0 - 2.0 * (px * px + py * py);
+            let yaw = atan2(siny_cosp, cosy_cosp);
+
+            // build yaw-only quaternion (axis Y)
+            let half = yaw * 0.5;
+            let yawQuat = vec4<f32>(0.0, sin(half), 0.0, cos(half));
+
+            // use conjugate of yawQuat and apply 180-degree flip
+            let invYaw = vec4<f32>(-yawQuat.x, -yawQuat.y, -yawQuat.z, yawQuat.w);
+            let rot180 = vec4<f32>(0.0, 1.0, 0.0, 0.0);
+            let invRotWithFlip = quatMul(invYaw, rot180);
+
+            let localOrigin = quatRotate(origin - offset, invRotWithFlip);
+            let localDir = quatRotate(dir, invRotWithFlip);
+
+            for (var j = 0; j < 9; j++) {
+                var shape = catShapes[j];
+
+                var newHitInfo = intersectWithShape(localOrigin, localDir, shape);
                 if (newHitInfo.block.block != 0) {
-                    // convert hit position back into world-space by adding the offset
-                    newHitInfo.pos = newHitInfo.pos + offset;
-                    
+                    // convert hit position and normal back into world-space by undoing the 180 flip and rotating and adding the offset
+                    // rotate back using yaw-only rotation and undo 180 flip
+                    let flipBack = quatMul(yawQuat, rot180);
+                    newHitInfo.pos = quatRotate(newHitInfo.pos, flipBack) + offset;
+                    newHitInfo.normal = quatRotate(newHitInfo.normal, flipBack);
+
                     if (newHitInfo.dist < bestDist) {
                         bestDist = newHitInfo.dist;
                         hitInfo = newHitInfo;

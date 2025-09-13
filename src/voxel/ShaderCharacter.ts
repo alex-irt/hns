@@ -10,7 +10,7 @@ type HitInfo = {
 
 
 export class ShaderCharacter {
-    cameraOffset: Vec3 = new Vec3(0, 1.25, 0);
+    cameraOffset: Vec3 = new Vec3(0, .75, 0);
 
     jumpStrength: number = 20;
     jumpStrengthKickstart: number = 25;

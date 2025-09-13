@@ -4,7 +4,7 @@ import { Vec3 } from "./Vec3";
 
 const specialBlocks = [
     {
-        id: 'magenta',
+        id: 'x',
         position: [55.5, 9.5, 20.5],
         color: [0, 0, 1, .5],
         playerColor: [0, 0, 1, .6]
